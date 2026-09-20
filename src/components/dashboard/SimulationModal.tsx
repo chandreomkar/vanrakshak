@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { SensorNode } from '../../types';
 import { api } from '../../services/api';
+import { mockStorage } from '../../services/mockStorage';
 import { Sparkles, AlertTriangle, Radio, CheckCircle2, Loader2, Volume2 } from 'lucide-react';
 
 interface SimulationModalProps {
@@ -17,11 +18,18 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({
   nodes,
   onSimulationComplete,
 }) => {
-  const [targetNodeId, setTargetNodeId] = useState<string>('VR-03');
+  const effectiveNodes = nodes && nodes.length > 0 ? nodes : mockStorage.getNodes();
+  const [targetNodeId, setTargetNodeId] = useState<string>(effectiveNodes[0]?.nodeId || 'VR-03');
   const [confidence, setConfidence] = useState<number>(0.92);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (effectiveNodes.length > 0 && !targetNodeId) {
+      setTargetNodeId(effectiveNodes[0].nodeId);
+    }
+  }, [effectiveNodes, targetNodeId]);
 
   const handleSimulateChainsaw = async () => {
     setLoading(true);
@@ -91,7 +99,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({
               onChange={(e) => setTargetNodeId(e.target.value)}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-forest-500"
             >
-              {nodes.map((node) => (
+              {effectiveNodes.map((node) => (
                 <option key={node.id} value={node.nodeId}>
                   {node.nodeId} — {node.name} ({node.zone}, Battery: {node.batteryPercentage}%)
                 </option>

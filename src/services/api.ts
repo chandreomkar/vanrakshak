@@ -11,25 +11,41 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
+/**
+ * Robust JSON fetch helper:
+ * Verifies HTTP 2xx AND verifies Content-Type is 'application/json'.
+ * If the backend is offline or if Vercel SPA rewrite returns index.html,
+ * this safely returns null instead of throwing unhandled JSON parse SyntaxErrors.
+ */
+async function safeFetchJson<T>(url: string, options?: RequestInit): Promise<T | null> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) {
+      return null;
+    }
+    const data = await res.json();
+    return data as T;
+  } catch (e) {
+    return null;
+  }
+}
+
 export const api = {
   // Authentication
   async login(role: string): Promise<{ token: string; user: User }> {
-    try {
-      const res = await fetch(`${BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        localStorage.setItem('vr_token', data.token);
-        return data;
-      }
-    } catch (e) {
-      // Backend unavailable (e.g. Vercel static deployment)
+    const data = await safeFetchJson<{ token: string; user: User }>(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+
+    if (data && data.user) {
+      localStorage.setItem('vr_token', data.token);
+      return data;
     }
 
-    // Client-side fallback
+    // Client-side fallback for Vercel/offline
     const user = mockStorage.switchUser(role as any);
     const token = `demo_token_${user.id}_${Date.now()}`;
     localStorage.setItem('vr_token', token);
@@ -37,15 +53,12 @@ export const api = {
   },
 
   async getMe(): Promise<{ user: User; authenticated: boolean; isGuest: boolean }> {
-    try {
-      const res = await fetch(`${BASE_URL}/auth/me`, {
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        return res.json();
-      }
-    } catch (e) {
-      // Backend unavailable
+    const data = await safeFetchJson<{ user: User; authenticated: boolean; isGuest: boolean }>(`${BASE_URL}/auth/me`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (data && data.user) {
+      return data;
     }
 
     const user = mockStorage.getCurrentUser();
@@ -53,105 +66,79 @@ export const api = {
   },
 
   async logout(): Promise<void> {
-    try {
-      await fetch(`${BASE_URL}/auth/logout`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
-    } catch (e) {
-      // Ignore
-    }
+    await safeFetchJson(`${BASE_URL}/auth/logout`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
     localStorage.removeItem('vr_token');
     mockStorage.switchUser('guest');
   },
 
   // Sensor Nodes
   async getNodes(): Promise<SensorNode[]> {
-    try {
-      const res = await fetch(`${BASE_URL}/nodes`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
+    const data = await safeFetchJson<SensorNode[]>(`${BASE_URL}/nodes`);
+    if (data && Array.isArray(data) && data.length > 0) {
+      return data;
     }
     return mockStorage.getNodes();
   },
 
   async getNode(nodeId: string): Promise<SensorNode> {
-    try {
-      const res = await fetch(`${BASE_URL}/nodes/${nodeId}`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
+    const data = await safeFetchJson<SensorNode>(`${BASE_URL}/nodes/${nodeId}`);
+    if (data) {
+      return data;
     }
     const node = mockStorage.getNode(nodeId);
     if (!node) throw new Error(`Node ${nodeId} not found`);
     return node;
   },
 
-  async createNode(data: Partial<SensorNode>): Promise<SensorNode> {
-    try {
-      const res = await fetch(`${BASE_URL}/nodes`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
-    return mockStorage.createNode(data);
+  async createNode(nodeData: Partial<SensorNode>): Promise<SensorNode> {
+    const data = await safeFetchJson<SensorNode>(`${BASE_URL}/nodes`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(nodeData),
+    });
+    if (data) return data;
+    return mockStorage.createNode(nodeData);
   },
 
-  async updateNode(nodeId: string, data: Partial<SensorNode>): Promise<SensorNode> {
-    try {
-      const res = await fetch(`${BASE_URL}/nodes/${nodeId}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
-    return mockStorage.updateNode(nodeId, data);
+  async updateNode(nodeId: string, nodeData: Partial<SensorNode>): Promise<SensorNode> {
+    const data = await safeFetchJson<SensorNode>(`${BASE_URL}/nodes/${nodeId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(nodeData),
+    });
+    if (data) return data;
+    return mockStorage.updateNode(nodeId, nodeData);
   },
 
   async deleteNode(nodeId: string): Promise<{ success: boolean }> {
-    try {
-      const res = await fetch(`${BASE_URL}/nodes/${nodeId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<{ success: boolean }>(`${BASE_URL}/nodes/${nodeId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (data) return data;
     return mockStorage.deleteNode(nodeId);
   },
 
   // Alerts
   async getAlerts(params?: { eventType?: string; zone?: string; status?: string }): Promise<Alert[]> {
-    try {
-      const query = new URLSearchParams();
-      if (params?.eventType) query.append('eventType', params.eventType);
-      if (params?.zone) query.append('zone', params.zone);
-      if (params?.status) query.append('status', params.status);
+    const query = new URLSearchParams();
+    if (params?.eventType) query.append('eventType', params.eventType);
+    if (params?.zone) query.append('zone', params.zone);
+    if (params?.status) query.append('status', params.status);
 
-      const res = await fetch(`${BASE_URL}/alerts?${query.toString()}`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
+    const data = await safeFetchJson<Alert[]>(`${BASE_URL}/alerts?${query.toString()}`);
+    if (data && Array.isArray(data) && data.length > 0) {
+      return data;
     }
     return mockStorage.getAlerts(params);
   },
 
   async getAlert(id: string): Promise<Alert & { actions: VerificationAction[] }> {
-    try {
-      const res = await fetch(`${BASE_URL}/alerts/${id}`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<Alert & { actions: VerificationAction[] }>(`${BASE_URL}/alerts/${id}`);
+    if (data) return data;
     const alert = mockStorage.getAlert(id);
     if (!alert) throw new Error(`Alert ${id} not found`);
     return alert;
@@ -164,27 +151,19 @@ export const api = {
     userId?: string,
     userName?: string
   ): Promise<Alert & { actions: VerificationAction[] }> {
-    try {
-      const res = await fetch(`${BASE_URL}/alerts/${id}/status`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ status, note, userId, userName }),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<Alert & { actions: VerificationAction[] }>(`${BASE_URL}/alerts/${id}/status`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status, note, userId, userName }),
+    });
+    if (data) return data;
     return mockStorage.updateAlertStatus(id, status, note, userId, userName);
   },
 
   // Verification Actions
   async getActions(): Promise<VerificationAction[]> {
-    try {
-      const res = await fetch(`${BASE_URL}/actions`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<VerificationAction[]>(`${BASE_URL}/actions`);
+    if (data && Array.isArray(data)) return data;
     return mockStorage.getActions();
   },
 
@@ -197,23 +176,15 @@ export const api = {
     gatewayStatus: string;
     dailyTrend: { day: string; total: number; verified: number; falsePositive: number }[];
   }> {
-    try {
-      const res = await fetch(`${BASE_URL}/metrics`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<any>(`${BASE_URL}/metrics`);
+    if (data && data.totalNodes !== undefined) return data;
     return mockStorage.getMetrics() as any;
   },
 
   // Project Settings
   async getSettings(): Promise<Record<string, string>> {
-    try {
-      const res = await fetch(`${BASE_URL}/settings`);
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<Record<string, string>>(`${BASE_URL}/settings`);
+    if (data) return data;
     return {
       demo_mode: 'true',
       gateway_status: 'online',
@@ -226,48 +197,36 @@ export const api = {
 
   // Simulation
   async simulateChainsawAlert(targetNodeId?: string, customConfidence?: number) {
-    try {
-      const res = await fetch(`${BASE_URL}/simulation/chainsaw-alert`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ targetNodeId, customConfidence }),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<any>(`${BASE_URL}/simulation/chainsaw-alert`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ targetNodeId, customConfidence }),
+    });
+    if (data && data.alert) return data;
     return mockStorage.simulateChainsawAlert(targetNodeId, customConfidence);
   },
 
   async simulateBackgroundEvent(targetNodeId?: string) {
-    try {
-      const res = await fetch(`${BASE_URL}/simulation/background-event`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ targetNodeId }),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<any>(`${BASE_URL}/simulation/background-event`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ targetNodeId }),
+    });
+    if (data && data.success) return data;
     return mockStorage.simulateBackgroundEvent(targetNodeId);
   },
 
   // Hardware Ingest (Planned Interface)
   async ingestHardwareAlert(payload: IngestAlertPayload, apiKey?: string) {
-    try {
-      const res = await fetch(`${BASE_URL}/ingest/alert`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey || 'vr_dev_test_device_key_in865',
-        },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) return res.json();
-    } catch (e) {
-      // Fallback
-    }
+    const data = await safeFetchJson<any>(`${BASE_URL}/ingest/alert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey || 'vr_dev_test_device_key_in865',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (data) return data;
     return {
       status: 'accepted',
       integrationStage: 'Planned Hardware Integration Interface',

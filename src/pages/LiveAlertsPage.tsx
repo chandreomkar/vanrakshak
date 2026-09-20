@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { mockStorage } from '../services/mockStorage';
 import { Alert } from '../types';
 import { AlertTable } from '../components/alerts/AlertTable';
 import { VerificationModal } from '../components/alerts/VerificationModal';
@@ -20,15 +21,16 @@ export const LiveAlertsPage: React.FC = () => {
 
   const fetchAlerts = async () => {
     setLoading(true);
+    const filterParams = {
+      eventType: filterEvent !== 'all' ? filterEvent : undefined,
+      zone: filterZone !== 'all' ? filterZone : undefined,
+      status: filterStatus !== 'all' ? filterStatus : undefined,
+    };
     try {
-      const data = await api.getAlerts({
-        eventType: filterEvent !== 'all' ? filterEvent : undefined,
-        zone: filterZone !== 'all' ? filterZone : undefined,
-        status: filterStatus !== 'all' ? filterStatus : undefined,
-      });
-      setAlerts(data);
+      const data = await api.getAlerts(filterParams);
+      setAlerts(data && data.length > 0 ? data : mockStorage.getAlerts(filterParams));
     } catch (e) {
-      console.error('Failed to load alerts', e);
+      setAlerts(mockStorage.getAlerts(filterParams));
     } finally {
       setLoading(false);
     }

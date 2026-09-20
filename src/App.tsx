@@ -15,13 +15,14 @@ import { ImpactPage } from './pages/ImpactPage';
 import { ProjectInfoPage } from './pages/ProjectInfoPage';
 import { LoginPage } from './pages/LoginPage';
 import { api } from './services/api';
+import { mockStorage } from './services/mockStorage';
 import { SensorNode } from './types';
 
 export const AppContent: React.FC = () => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSimulationOpen, setIsSimulationOpen] = useState(false);
-  const [nodes, setNodes] = useState<SensorNode[]>([]);
-  const [pendingAlertCount, setPendingAlertCount] = useState(0);
+  const [nodes, setNodes] = useState<SensorNode[]>(mockStorage.getNodes());
+  const [pendingAlertCount, setPendingAlertCount] = useState(1);
 
   const fetchGlobalStats = async () => {
     try {
@@ -29,10 +30,11 @@ export const AppContent: React.FC = () => {
         api.getNodes(),
         api.getAlerts({ status: 'pending' }),
       ]);
-      setNodes(nodesData);
-      setPendingAlertCount(alertsData.length);
+      setNodes(nodesData && nodesData.length > 0 ? nodesData : mockStorage.getNodes());
+      setPendingAlertCount(alertsData ? alertsData.length : 1);
     } catch (e) {
-      console.warn('Initial data poll error:', e);
+      setNodes(mockStorage.getNodes());
+      setPendingAlertCount(1);
     }
   };
 

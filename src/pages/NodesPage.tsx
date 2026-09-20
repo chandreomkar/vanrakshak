@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { mockStorage } from '../services/mockStorage';
 import { SensorNode } from '../types';
 import { NodeCard } from '../components/nodes/NodeCard';
 import { NodeModal } from '../components/nodes/NodeModal';
@@ -22,9 +23,9 @@ export const NodesPage: React.FC = () => {
     setLoading(true);
     try {
       const data = await api.getNodes();
-      setNodes(data);
+      setNodes(data && data.length > 0 ? data : mockStorage.getNodes());
     } catch (e) {
-      console.error('Failed to load nodes', e);
+      setNodes(mockStorage.getNodes());
     } finally {
       setLoading(false);
     }

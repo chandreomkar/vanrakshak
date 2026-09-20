@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { mockStorage } from '../services/mockStorage';
 import { SensorNode, Alert, SystemMetrics } from '../types';
 import { StatCard } from '../components/common/StatCard';
 import { ZoneGridMap } from '../components/dashboard/ZoneGridMap';
@@ -45,11 +46,13 @@ export const OverviewPage: React.FC = () => {
         api.getAlerts(),
         api.getMetrics(),
       ]);
-      setNodes(nodesData);
-      setAlerts(alertsData);
-      setMetrics(metricsData);
+      setNodes(nodesData && nodesData.length > 0 ? nodesData : mockStorage.getNodes());
+      setAlerts(alertsData && alertsData.length > 0 ? alertsData : mockStorage.getAlerts());
+      setMetrics(metricsData || mockStorage.getMetrics());
     } catch (e) {
-      console.error('Failed to load overview data', e);
+      setNodes(mockStorage.getNodes());
+      setAlerts(mockStorage.getAlerts());
+      setMetrics(mockStorage.getMetrics());
     } finally {
       setLoading(false);
     }
